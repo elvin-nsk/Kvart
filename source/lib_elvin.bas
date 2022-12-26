@@ -1,7 +1,7 @@
 Attribute VB_Name = "lib_elvin"
 '===============================================================================
 '   Модуль          : lib_elvin
-'   Версия          : 2022.10.21
+'   Версия          : 2022.12.26
 '   Автор           : elvin-nsk (me@elvin.nsk.ru)
 '   Использован код : dizzy (из макроса CtC), Alex Vakulenko
 '                     и др.
@@ -85,6 +85,10 @@ Public Sub BoostFinish(Optional ByVal EndUndoGroup As Boolean = True)
         ActiveWindow.Refresh
     End If
     Application.Windows.Refresh
+End Sub
+
+Public Sub Throw(Optional ByVal Message As String = "Неизвестная ошибка")
+    VBA.Err.Raise CustomError, , Message
 End Sub
 
 '===============================================================================
@@ -205,6 +209,14 @@ Private Sub AddFontToCollection( _
     If Not Found Then ioFonts.Add FontName
 End Sub
 
+Public Function DiffWithinTolerance( _
+                     ByVal Number1 As Variant, _
+                     ByVal Number2 As Variant, _
+                     ByVal Tolerance As Variant _
+                 ) As Boolean
+    DiffWithinTolerance = VBA.Abs(Number1 - Number2) < Tolerance
+End Function
+
 'возвращает все шейпы на всех слоях текущей страницы, по умолчанию - без мастер-слоёв и без гайдов
 Public Function FindShapesActivePageLayers( _
                     Optional ByVal GuidesLayers As Boolean, _
@@ -250,12 +262,10 @@ Public Function FindLayerDuplicate( _
                 ) As Layer
     For Each FindLayerDuplicate In PageToSearch.AllLayers
         With FindLayerDuplicate
-            If (.Name = SrcLayer.Name) _
-           And (.IsDesktopLayer = SrcLayer.IsDesktopLayer) _
-           And (.IsGridLayer = SrcLayer.IsGridLayer) _
-           And (.IsGuidesLayer = SrcLayer.IsGuidesLayer) _
-           And (.Master = SrcLayer.Master) _
-           And (.Color.IsSame(SrcLayer.Color)) Then _
+            If (.Name = SrcLayer.Name) And _
+                 (.IsDesktopLayer = SrcLayer.IsDesktopLayer) And _
+                 (.Master = SrcLayer.Master) And _
+                 (.Color.IsSame(SrcLayer.Color)) Then _
                  Exit Function
         End With
     Next
@@ -264,7 +274,7 @@ End Function
 
 Public Function GetAverageColor(ByVal Colors As Collection) As Color
     If Colors.Count = 0 Then
-        VBA.Err.Raise CustomError, "lib_elvin", "No colors in colors collection"
+        Throw "No colors in colors collection"
         Exit Function
     End If
     If Colors.Count = 1 Then
@@ -788,28 +798,28 @@ End Function
 
 'дублировать активную страницу со всеми слоями и объектами
 Public Function DuplicateActivePage( _
-                    ByVal Copies As Long, _
+                    ByVal NumberOfPages As Long, _
                     Optional ByVal ExcludeLayerName As String = "" _
                 ) As Page
-    Dim Shapes As ShapeRange
-    Dim Shape As Shape, Duplicate As Shape
-    Dim Props As typeLayerProps
+    Dim tRange As ShapeRange
+    Dim tShape As Shape, sDuplicate As Shape
+    Dim tProps As typeLayerProps
     Dim i&
-    For i = 1 To Copies
-        Set Shapes = FindShapesActivePageLayers
+    For i = 1 To NumberOfPages
+        Set tRange = FindShapesActivePageLayers
         Set DuplicateActivePage = _
             ActiveDocument.InsertPages(1, False, ActivePage.Index)
         DuplicateActivePage.SizeHeight = ActivePage.SizeHeight
         DuplicateActivePage.SizeWidth = ActivePage.SizeWidth
-        For Each Shape In Shapes.ReverseRange
-            If Not Shape.Layer.Name = ExcludeLayerName Then
-                LayerPropsPreserveAndReset Shape.Layer, Props
-                Set Duplicate = Shape.Duplicate
-                Duplicate.MoveToLayer _
-                    FindLayerDuplicate(DuplicateActivePage, Shape.Layer)
-                LayerPropsRestore Shape.Layer, Props
+        For Each tShape In tRange.ReverseRange
+            If tShape.Layer.Name <> ExcludeLayerName Then
+                LayerPropsPreserveAndReset tShape.Layer, tProps
+                Set sDuplicate = tShape.Duplicate
+                sDuplicate.MoveToLayer _
+                    FindLayerDuplicate(DuplicateActivePage, tShape.Layer)
+                LayerPropsRestore tShape.Layer, tProps
             End If
-        Next Shape
+        Next tShape
     Next i
 End Function
 
@@ -1065,12 +1075,45 @@ End Function
 '===============================================================================
 ' # функции работы с файлами
 
+Public Function AddProperEndingToPath(ByVal Path As String) As String
+    If Not VBA.Right$(Path, 1) = "\" Then AddProperEndingToPath = Path & "\" _
+    Else: AddProperEndingToPath = Path
+End Function
+
+'существует ли файл или папка (папка должна заканчиваться на "\")
+Public Function FileExists(ByVal File As String) As Boolean
+    If File = "" Then Exit Function
+    FileExists = VBA.Len(VBA.Dir(File)) > 0
+End Function
+
 Public Function FindFileInGMSFolders(ByVal FileName As String) As String
     FindFileInGMSFolders = GMSManager.UserGMSPath & FileName
     If Not FileExists(FindFileInGMSFolders) Then _
         FindFileInGMSFolders = GMSManager.GMSPath & FileName
     If Not FileExists(FindFileInGMSFolders) Then _
         FindFileInGMSFolders = ""
+End Function
+
+'возвращает имя файла без расширения
+Public Function GetFileNameNoExt(ByVal FileName As String) As String
+    If VBA.Right(FileName, 1) <> "\" And VBA.Len(FileName) > 0 Then
+        GetFileNameNoExt = Left(FileName, _
+            Switch _
+                (InStr(FileName, ".") = 0, _
+                    Len(FileName), _
+                InStr(FileName, ".") > 0, _
+                    InStrRev(FileName, ".") - 1))
+    End If
+End Function
+
+'полное имя временного файла
+Public Function GetTempFile() As String
+    GetTempFile = GetTempFolder & GetTempFileName
+End Function
+
+'имя временного файла
+Public Function GetTempFileName() As String
+    GetTempFileName = "elvin_" & CreateGUID & ".tmp"
 End Function
 
 'находит временную папку
@@ -1085,19 +1128,119 @@ Public Function GetTempFolder() As String
     If FileExists(GetTempFolder) Then Exit Function
 End Function
 
-'полное имя временного файла
-Public Function GetTempFile() As String
-    GetTempFile = GetTempFolder & GetTempFileName
+'---------------------------------------------------------------------------------------
+' Procedure         : GetFileName
+' Author            : CARDA Consultants Inc.
+' Website           : http://www.cardaconsultants.com
+' Purpose           : Return the filename from a Path\filename input
+' Copyright         : The following may be altered and reused as you wish so long as the
+'                     copyright notice is left unchanged (including Author, Website and
+'                     Copyright).    It may not be sold/resold or reposted on other sites (links
+'                     back to this site are allowed).
+'
+' Input Variables:
+' ~~~~~~~~~~~~~~~~
+' sFile - string of a Path and filename (ie: "c:\temp\Test.xls")
+'
+' Revision History:
+' Rev               Date(yyyy/mm/dd)              Description
+' **************************************************************************************
+' 1                 2008-Feb-06                   Initial Release
+'---------------------------------------------------------------------------------------
+Public Function GetFileName(ByVal sFile As String)
+On Error GoTo Err_Handler
+ 
+    GetFileName = Right(sFile, Len(sFile) - InStrRev(sFile, "\"))
+ 
+Exit_Err_Handler:
+    Exit Function
+ 
+Err_Handler:
+    MsgBox "The following error has occurred" & vbCrLf & vbCrLf & _
+           "Error Number: " & Err.Number & vbCrLf & _
+           "Error Source: GetFileName" & vbCrLf & _
+           "Error Description: " & Err.Description, vbCritical, "An Error has Occurred!"
+    GoTo Exit_Err_Handler
 End Function
 
-'имя временного файла
-Public Function GetTempFileName() As String
-    GetTempFileName = "elvin_" & CreateGUID & ".tmp"
+'---------------------------------------------------------------------------------------
+' Procedure : GetFilePath
+' Author            : CARDA Consultants Inc.
+' Website           : http://www.cardaconsultants.com
+' Purpose           : Return the Path from a Path\filename input
+' Copyright         : The following may be altered and reused as you wish so long as the
+'                     copyright notice is left unchanged (including Author, Website and
+'                     Copyright).    It may not be sold/resold or reposted on other sites (links
+'                     back to this site are allowed).
+'
+' Input Variables:
+' ~~~~~~~~~~~~~~~~
+' sFile - string of a Path and filename (ie: "c:\temp\Test.xls")
+'
+' Revision History:
+' Rev               Date(yyyy/mm/dd)              Description
+' **************************************************************************************
+' 1                 2008-Feb-06                   Initial Release
+'---------------------------------------------------------------------------------------
+Public Function GetFilePath(ByVal sFile As String)
+On Error GoTo Err_Handler
+ 
+    GetFilePath = Left(sFile, InStrRev(sFile, "\"))
+ 
+Exit_Err_Handler:
+    Exit Function
+ 
+Err_Handler:
+    MsgBox "The following error has occurred" & vbCrLf & vbCrLf & _
+           "Error Number: " & Err.Number & vbCrLf & _
+           "Error Source: GetFilePath" & vbCrLf & _
+           "Error Description: " & Err.Description, vbCritical, "An Error has Occurred!"
+    GoTo Exit_Err_Handler
+End Function
+
+'создаёт папку, если не было
+'возвращает Path обратно (для inline-использования)
+Public Function MakeDir(ByVal Path As String) As String
+    If VBA.Dir(Path, vbDirectory) = "" Then MkDir Path
+    MakeDir = Path
+End Function
+
+'загружает файл в строку
+Public Function ReadFile(ByVal File As String) As String
+    Dim tFileNum As Long
+    tFileNum = FreeFile
+    Open File For Input As #tFileNum
+    ReadFile = Input(LOF(tFileNum), tFileNum)
+    Close #tFileNum
+End Function
+
+'загружает файл в строку через ADODB, можно задать кодировку
+Public Function ReadFileAD( _
+                    ByVal File As String, _
+                    Optional ByVal CharSet As String = "utf-8" _
+                ) As String
+    Dim ADODB As Object
+    Set ADODB = VBA.CreateObject("ADODB.Stream")
+    ADODB.CharSet = CharSet
+    ADODB.Open
+    ADODB.LoadFromFile File
+    ReadFileAD = ADODB.ReadText()
+    ADODB.Close
+End Function
+
+'заменяет расширение файлу на заданное
+Public Function SetFileExt( _
+                    ByVal SourceFile As String, _
+                    ByVal NewExt As String _
+                ) As String
+    If Right(SourceFile, 1) <> "\" And Len(SourceFile) > 0 Then
+        SetFileExt = GetFileNameNoExt(SourceFile$) & "." & NewExt
+    End If
 End Function
 
 'сохраняет строку Content в файл, перезаписывая, делая в процессе temp файл,
 'и оставляя бэкап, если необходимо
-Public Sub SaveStrToFile( _
+Public Sub WriteFile( _
                ByVal Content As String, _
                ByVal File As String, _
                Optional ByVal KeepBak As Boolean = False _
@@ -1128,124 +1271,20 @@ Public Sub SaveStrToFile( _
 
 End Sub
 
-'загружает файл в строку
-Public Function LoadStrFromFile(ByVal File As String) As String
-    Dim tFileNum As Long
-    tFileNum = FreeFile
-    Open File For Input As #tFileNum
-    LoadStrFromFile = Input(LOF(tFileNum), tFileNum)
-    Close #tFileNum
-End Function
-
-'заменяет расширение файлу на заданное
-Public Function SetFileExt( _
-                    ByVal SourceFile As String, _
-                    ByVal NewExt As String _
-                ) As String
-    If Right(SourceFile, 1) <> "\" And Len(SourceFile) > 0 Then
-        SetFileExt = GetFileNameNoExt(SourceFile$) & "." & NewExt
-    End If
-End Function
-
-'возвращает имя файла без расширения
-Public Function GetFileNameNoExt(ByVal FileName As String) As String
-    If VBA.Right(FileName, 1) <> "\" And VBA.Len(FileName) > 0 Then
-        GetFileNameNoExt = Left(FileName, _
-            Switch _
-                (InStr(FileName, ".") = 0, _
-                    Len(FileName), _
-                InStr(FileName, ".") > 0, _
-                    InStrRev(FileName, ".") - 1))
-    End If
-End Function
-
-'создаёт папку, если не было
-'возвращает Path обратно (для inline-использования)
-Public Function MakeDir(ByVal Path As String) As String
-    If VBA.Dir(Path, vbDirectory) = "" Then MkDir Path
-    MakeDir = Path
-End Function
-
-'существует ли файл или папка (папка должна заканчиваться на "\")
-Public Function FileExists(ByVal File As String) As Boolean
-    If File = "" Then Exit Function
-    FileExists = VBA.Len(VBA.Dir(File)) > 0
-End Function
-
-Public Function AddProperEndingToPath(ByVal Path As String) As String
-    If Not VBA.Right$(Path, 1) = "\" Then AddProperEndingToPath = Path & "\" _
-    Else: AddProperEndingToPath = Path
-End Function
-
-'---------------------------------------------------------------------------------------
-' Procedure         : GetFileName
-' Author            : CARDA Consultants Inc.
-' Website           : http://www.cardaconsultants.com
-' Purpose           : Return the filename from a path\filename input
-' Copyright         : The following may be altered and reused as you wish so long as the
-'                     copyright notice is left unchanged (including Author, Website and
-'                     Copyright).    It may not be sold/resold or reposted on other sites (links
-'                     back to this site are allowed).
-'
-' Input Variables:
-' ~~~~~~~~~~~~~~~~
-' sFile - string of a path and filename (ie: "c:\temp\Test.xls")
-'
-' Revision History:
-' Rev               Date(yyyy/mm/dd)              Description
-' **************************************************************************************
-' 1                 2008-Feb-06                   Initial Release
-'---------------------------------------------------------------------------------------
-Public Function GetFileName(ByVal sFile As String)
-On Error GoTo Err_Handler
- 
-        GetFileName = Right(sFile, Len(sFile) - InStrRev(sFile, "\"))
- 
-Exit_Err_Handler:
-        Exit Function
- 
-Err_Handler:
-        MsgBox "The following error has occurred" & vbCrLf & vbCrLf & _
-                     "Error Number: " & Err.Number & vbCrLf & _
-                     "Error Source: GetFileName" & vbCrLf & _
-                     "Error Description: " & Err.Description, vbCritical, "An Error has Occurred!"
-        GoTo Exit_Err_Handler
-End Function
-
-'---------------------------------------------------------------------------------------
-' Procedure : GetFilePath
-' Author            : CARDA Consultants Inc.
-' Website           : http://www.cardaconsultants.com
-' Purpose           : Return the path from a path\filename input
-' Copyright         : The following may be altered and reused as you wish so long as the
-'                     copyright notice is left unchanged (including Author, Website and
-'                     Copyright).    It may not be sold/resold or reposted on other sites (links
-'                     back to this site are allowed).
-'
-' Input Variables:
-' ~~~~~~~~~~~~~~~~
-' sFile - string of a path and filename (ie: "c:\temp\Test.xls")
-'
-' Revision History:
-' Rev               Date(yyyy/mm/dd)              Description
-' **************************************************************************************
-' 1                 2008-Feb-06                   Initial Release
-'---------------------------------------------------------------------------------------
-Public Function GetFilePath(ByVal sFile As String)
-On Error GoTo Err_Handler
- 
-        GetFilePath = Left(sFile, InStrRev(sFile, "\"))
- 
-Exit_Err_Handler:
-        Exit Function
- 
-Err_Handler:
-        MsgBox "The following error has occurred" & vbCrLf & vbCrLf & _
-                     "Error Number: " & Err.Number & vbCrLf & _
-                     "Error Source: GetFilePath" & vbCrLf & _
-                     "Error Description: " & Err.Description, vbCritical, "An Error has Occurred!"
-        GoTo Exit_Err_Handler
-End Function
+'сохраняет строку Content в файл через ADODB, можно задать кодировку
+Public Sub WriteFileAD( _
+               ByVal File As String, _
+               ByVal Content As String, _
+               Optional CharSet As String = "utf-8" _
+           )
+    Dim ADODB As Object
+    Set ADODB = VBA.CreateObject("ADODB.Stream")
+    ADODB.CharSet = CharSet
+    ADODB.Open
+    ADODB.WriteText Content
+    ADODB.SaveToFile File
+    ADODB.Close
+End Sub
 
 '===============================================================================
 ' # прочие функции
@@ -1360,18 +1399,21 @@ Public Function FindMinItemNum(ByRef Collection As Collection) As Long
     Next i
 End Function
 
-Public Function MinOfTwo( _
-                    ByVal Value1 As Variant, _
-                    ByVal Value2 As Variant _
-                ) As Variant
-    If Value1 < Value2 Then MinOfTwo = Value1 Else MinOfTwo = Value2
+'является ли число чётным :) Что такое Even и Odd запоминать лень...
+Public Function IsChet(ByVal X As Variant) As Boolean
+    If X Mod 2 = 0 Then IsChet = True Else IsChet = False
 End Function
 
-Public Function MaxOfTwo( _
-                    ByVal Value1 As Variant, _
-                    ByVal Value2 As Variant _
-                ) As Variant
-    If Value1 > Value2 Then MaxOfTwo = Value1 Else MaxOfTwo = Value2
+'делится ли Number на Divider нацело
+Public Function IsDivider( _
+                    ByVal Number As Long, _
+                    ByVal Divider As Long _
+                ) As Boolean
+    If Number Mod Divider = 0 Then IsDivider = True Else IsDivider = False
+End Function
+
+Public Function IsLowerCase(ByVal Str As String) As Boolean
+    If VBA.LCase(Str) = Str Then IsLowerCase = True
 End Function
 
 Public Function IsSame( _
@@ -1400,17 +1442,8 @@ Public Function IsStrInArr( _
         IsStrInArr = False
 End Function
 
-'является ли число чётным :) Что такое Even и Odd запоминать лень...
-Public Function IsChet(ByVal x As Variant) As Boolean
-    If x Mod 2 = 0 Then IsChet = True Else IsChet = False
-End Function
-
-'делится ли Number на Divider нацело
-Public Function IsDivider( _
-                    ByVal Number As Long, _
-                    ByVal Divider As Long _
-                ) As Boolean
-    If Number Mod Divider = 0 Then IsDivider = True Else IsDivider = False
+Public Function IsUpperCase(ByVal Str As String) As Boolean
+    If VBA.UCase(Str) = Str Then IsUpperCase = True
 End Function
 
 Public Sub RemoveElementFromCollection( _
@@ -1427,12 +1460,18 @@ Public Sub RemoveElementFromCollection( _
     Next i
 End Sub
 
-'случайное целое от LowerBound до UpperBound
-Public Function RndInt( _
-                    ByVal LowerBound As Long, _
-                    ByVal UpperBound As Long _
-                ) As Long
-    RndInt = Int((UpperBound - LowerBound + 1) * Rnd + LowerBound)
+Public Function MinOfTwo( _
+                    ByVal Value1 As Variant, _
+                    ByVal Value2 As Variant _
+                ) As Variant
+    If Value1 < Value2 Then MinOfTwo = Value1 Else MinOfTwo = Value2
+End Function
+
+Public Function MaxOfTwo( _
+                    ByVal Value1 As Variant, _
+                    ByVal Value2 As Variant _
+                ) As Variant
+    If Value1 > Value2 Then MaxOfTwo = Value1 Else MaxOfTwo = Value2
 End Function
 
 Public Function MeasureStart()
@@ -1440,6 +1479,14 @@ Public Function MeasureStart()
 End Function
 Public Function MeasureFinish(Optional ByVal Message As String = "")
     Debug.Print Message & CStr(Round(Timer - StartTime, 3)) & " секунд"
+End Function
+
+'случайное целое от LowerBound до UpperBound
+Public Function RndInt( _
+                    ByVal LowerBound As Long, _
+                    ByVal UpperBound As Long _
+                ) As Long
+    RndInt = Int((UpperBound - LowerBound + 1) * Rnd + LowerBound)
 End Function
 
 '===============================================================================

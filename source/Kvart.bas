@@ -2,7 +2,7 @@ Attribute VB_Name = "Kvart"
 '===============================================================================
 '   Макрос          : Kvart
 '   Описание        : Генератор месяцев календаря постранично на основе шаблона
-'   Версия          : 2022.10.24
+'   Версия          : 2022.12.26
 '   Сайты           : https://vk.com/elvin_macro/Kvart
 '                     https://github.com/elvin-nsk/Kvart
 '   Автор           : elvin-nsk (me@elvin.nsk.ru)
@@ -133,7 +133,7 @@ Private Sub MakeKvartFromActiveDoc(ByRef Params As typeParams)
     Dim PBar As IProgressBar
     Set PBar = ProgressBar.CreateNumeric(CalPagesCount)
     PBar.Caption = "Заполнение сеток"
-    For i = 1 To CalPagesCount
+    For i = 1 To VBA.IIf(RELEASE, CalPagesCount, 2)
         ProcessPage ActiveDocument.Pages(i), Params, Positions
         PBar.Update
     Next
@@ -432,14 +432,23 @@ Private Function FindByName(ByVal Name As String) As Shape
     End If
 End Function
 
-Private Sub SetTextByName(ByVal Name As String, txt)
+Private Sub SetTextByName(ByVal Name As String, ByVal Text As String)
     Dim Shape As Shape
     
-    If FindByName(Name) Is Nothing Then
-    Else
-        Set Shape = FindByName(Name)
-        If Shape.Type = cdrTextShape Then Shape.Text.Story.Text = CStr(txt)
+    If FindByName(Name) Is Nothing Then Exit Sub
+    
+    Set Shape = FindByName(Name)
+    If Shape.Type = cdrTextShape Then
+        If IsUpperCase(Shape.Text.Story.Text) Then
+            Shape.Text.Story.Text = VBA.UCase(Text)
+        ElseIf IsLowerCase(Shape.Text.Story.Text) Then
+            Shape.Text.Story.Text = VBA.LCase(Text)
+        Else
+            Shape.Text.Story.Text = Text
+            Shape.Text.Story.ChangeCase cdrTextSentenceCase
+        End If
     End If
+    
 End Sub
 
 Private Sub SafeDeleteByName(ByVal Name As String)

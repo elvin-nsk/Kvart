@@ -10,17 +10,16 @@ Attribute VB_Exposed = True
 '@PredeclaredId
 Option Explicit
 
-Implements IProgressBar
-
 '===============================================================================
+' # Declarations
 
-Private Enum ProgressBarUnit
-    pbDecimal
-    pbNumeric
-    pbPercent
+Public Enum ProgressBarUnit
+    ProgressBarNumeric = 0
+    ProgressBarDecimal
+    ProgressBarPercent
 End Enum
 
-Private Type typeThis
+Private Type This
     Cancelable As Boolean
     Canceled As Boolean
     Iteration As Long
@@ -28,42 +27,37 @@ Private Type typeThis
     Step As Long
     Unit As ProgressBarUnit
 End Type
-Private This As typeThis
+Private This As This
 
 Private WithEvents View As ProgressBarView
 Attribute View.VB_VarHelpID = -1
 
 '===============================================================================
+' # Constructors
 
-'прогресс в виде десятичной дроби
-Public Function CreateDecimal() As IProgressBar
-    With New ProgressBar
-        Set CreateDecimal = .Init(pbDecimal, 1, 0.1)
-    End With
-End Function
-
-'прогресс в виде текущей итерации из максимальных
-Public Function CreateNumeric( _
-                    ByVal Max As Long, _
+Public Function New_( _
+                    Optional ByVal Unit As ProgressBarUnit = ProgressBarNumeric, _
+                    Optional ByVal Max As Long = 100, _
                     Optional ByVal Step As Long = 1 _
-                ) As IProgressBar
-    With New ProgressBar
-        Set CreateNumeric = .Init(pbNumeric, Max, 1)
-    End With
+                ) As ProgressBar
+    Set New_ = New ProgressBar
+    New_.Inject Unit, Max, Step
 End Function
 
-'прогресс в виде процентов
-Public Function CreatePercent() As IProgressBar
-    With New ProgressBar
-        Set CreatePercent = .Init(pbPercent, 100, 1)
+Private Sub Class_Initialize()
+    With This
+        .Max = 100
+        .Step = 1
+        .Iteration = 0
+        Set View = New ProgressBarView
     End With
-End Function
+End Sub
 
-Friend Function Init( _
-                    ByVal Unit As ProgressBarUnit, _
-                    ByVal Max As Long, _
-                    ByVal Step As Long _
-                ) As IProgressBar
+Friend Sub Inject( _
+               ByVal Unit As ProgressBarUnit, _
+               ByVal Max As Long, _
+               ByVal Step As Long _
+           )
     With This
         .Unit = Unit
         If IsValid(Max) Then .Max = Max Else Throw
@@ -71,86 +65,99 @@ Friend Function Init( _
         .Iteration = 0
         Set View = New ProgressBarView
     End With
-    Set Init = Me
-End Function
+End Sub
 
 Private Sub Class_Terminate()
     DisposeView
 End Sub
 
 '===============================================================================
+' # Handlers
 
-Private Property Let IProgressBar_Cancelable(ByVal RHS As Boolean)
+Private Sub View_QueryCancel()
+    With This
+        If .Cancelable Then
+            .Canceled = True
+            DisposeView
+        End If
+    End With
+End Sub
+
+'===============================================================================
+' # Public
+
+Public Property Get Cancelable() As Boolean
+    Cancelable = This.Cancelable
+End Property
+Public Property Let Cancelable(ByVal RHS As Boolean)
     This.Cancelable = RHS
     View.Cancelable = RHS
 End Property
-Private Property Get IProgressBar_Cancelable() As Boolean
-    IProgressBar_Cancelable = This.Cancelable
+
+Public Property Get Canceled() As Boolean
+    Canceled = This.Canceled
 End Property
 
-Private Property Get IProgressBar_Canceled() As Boolean
-    IProgressBar_Canceled = This.Canceled
-End Property
-
-Private Property Let IProgressBar_Caption(ByVal RHS As String)
+Public Property Let Caption(ByVal RHS As String)
     View.Caption = RHS
 End Property
-Private Property Get IProgressBar_Caption() As String
-    IProgressBar_Caption = View.Caption
+Private Property Get Caption() As String
+    Caption = View.Caption
 End Property
 
-Private Property Let IProgressBar_CancelButtonCaption(ByVal RHS As String)
+Public Property Get CancelButtonCaption() As String
+    CancelButtonCaption = View.CancelButtonCaption
+End Property
+Public Property Let CancelButtonCaption(ByVal RHS As String)
     View.CancelButtonCaption = RHS
 End Property
-Private Property Get IProgressBar_CancelButtonCaption() As String
-    IProgressBar_CancelButtonCaption = View.CancelButtonCaption
+
+Public Property Get Max() As Long
+    Max = This.Max
 End Property
 
-Private Property Get IProgressBar_Max() As Long
-    IProgressBar_Max = This.Max
+Public Property Get NumericMiddleText() As String
+    NumericMiddleText = View.NumericMiddleText
 End Property
-
-Private Property Let IProgressBar_NumericMiddleText(ByVal RHS As String)
+Private Property Let NumericMiddleText(ByVal RHS As String)
     View.NumericMiddleText = RHS
 End Property
-Private Property Get IProgressBar_NumericMiddleText() As String
-    IProgressBar_NumericMiddleText = View.NumericMiddleText
+
+Public Property Get Step() As Long
+    Step = This.Step
 End Property
 
-Private Property Get IProgressBar_Step() As Long
-    IProgressBar_Step = This.Step
-End Property
-
-Private Sub IProgressBar_Update()
+Public Sub Update()
     ShowView
     Dim CurrentValue As Long
     With This
         .Iteration = .Iteration + 1
         CurrentValue = .Iteration * .Step
-        View.UpdateTo CurrentValue, .Max, Not (.Unit = pbNumeric)
+        View.UpdateTo CurrentValue, .Max, Not (.Unit = ProgressBarNumeric)
     End With
 End Sub
 
-Private Sub IProgressBar_UpdateTo(ByVal RHS As Variant)
+Public Sub UpdateTo(ByVal RHS As Variant)
     ShowView
     With This
         If Not IsValid(RHS) Then Exit Sub
         Select Case .Unit
-        Case pbDecimal
+        Case ProgressBarDecimal
             View.UpdateTo VBA.CLng(RHS / 100), 100
-        Case pbNumeric
+        Case ProgressBarNumeric
             View.UpdateTo VBA.CLng(RHS), VBA.CLng(.Max), False
-        Case pbPercent
+        Case ProgressBarPercent
             View.UpdateTo VBA.CLng(RHS), 100
         End Select
     End With
 End Sub
 
-Private Property Get IProgressBar_Self() As IProgressBar
-    Set IProgressBar_Self = Me
+Public Property Get Self() As ProgressBar
+    Set Self = Me
 End Property
 
 '===============================================================================
+' # Helpers
 
 Private Sub DisposeView()
     On Error Resume Next
@@ -163,33 +170,23 @@ Private Function IsValid(ByVal Value As Variant) As Boolean
     If Not VBA.IsNumeric(Value) Then Exit Function
     With This
         Select Case .Unit
-        Case pbDecimal
+        Case ProgressBarDecimal
             If Value > 0 And Value <= 1 Then IsValid = True
-        Case pbNumeric
+        Case ProgressBarNumeric
             If Value > 0 Then IsValid = True
-        Case pbPercent
+        Case ProgressBarPercent
             If Value > 0 And Value <= 100 Then IsValid = True
         End Select
     End With
 End Function
-
-Private Sub View_QueryCancel()
-    With This
-        If .Cancelable Then
-            .Canceled = True
-            DisposeView
-        End If
-    End With
-End Sub
 
 Private Sub ShowView()
     If Not View.Visible Then View.Show vbModeless
 End Sub
 
 Private Sub Throw()
-    VBA.Err.Raise vbObjectError Or 32, "ProgressBar", "Wrong value in current unit context"
+    VBA.Err.Raise _
+        vbObjectError Or 32, _
+        "ProgressBar", _
+        "Wrong value in current unit context"
 End Sub
-
-Private Property Get Self() As IProgressBar
-    Set Self = Me
-End Property

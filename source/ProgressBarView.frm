@@ -13,11 +13,11 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 
-
 'Original: https://www.erlandsendata.no
 Option Explicit
 
 '===============================================================================
+' # Declarations
 
 Private Const GWL_STYLE = -16
 Private Const WS_CAPTION = &HC00000
@@ -26,25 +26,25 @@ Private Const SC_CLOSE = &HF060
 
 #If VBA7 Then
 
-        Private Declare PtrSafe Function FindWindowA _
-                Lib "user32" (ByVal lpClassName As String, _
-                ByVal lpWindowName As String) As Long
-        Private Declare PtrSafe Function DeleteMenu _
-                Lib "user32" (ByVal hMenu As Long, ByVal nPosition As Long, _
-                ByVal wFlags As Long) As Long
-        Private Declare PtrSafe Function GetSystemMenu _
-                Lib "user32" (ByVal hWnd As Long, ByVal bRevert As Long) As Long
+    Private Declare PtrSafe Function FindWindowA _
+        Lib "user32" (ByVal lpClassName As String, _
+        ByVal lpWindowName As String) As Long
+    Private Declare PtrSafe Function DeleteMenu _
+        Lib "user32" (ByVal hMenu As Long, ByVal nPosition As Long, _
+        ByVal wFlags As Long) As Long
+    Private Declare PtrSafe Function GetSystemMenu _
+        Lib "user32" (ByVal hWnd As Long, ByVal bRevert As Long) As Long
                 
 #Else
 
-        Private Declare Function FindWindowA _
-                Lib "user32" (ByVal lpClassName As String, _
-                ByVal lpWindowName As String) As Long
-        Private Declare Function DeleteMenu _
-                Lib "user32" (ByVal hMenu As Long, _
-                ByVal nPosition As Long, ByVal wFlags As Long) As Long
-        Public Declare Function GetSystemMenu _
-                Lib "user32" (ByVal hWnd As Long, ByVal bRevert As Long) As Long
+    Private Declare Function FindWindowA _
+        Lib "user32" (ByVal lpClassName As String, _
+        ByVal lpWindowName As String) As Long
+    Private Declare Function DeleteMenu _
+        Lib "user32" (ByVal hMenu As Long, _
+        ByVal nPosition As Long, ByVal wFlags As Long) As Long
+    Public Declare Function GetSystemMenu _
+        Lib "user32" (ByVal hWnd As Long, ByVal bRevert As Long) As Long
                 
 #End If
 
@@ -53,6 +53,7 @@ Public NumericMiddleText As String
 Private LastDoneWidth As Long
 
 '===============================================================================
+' # Handlers
 
 Private Sub UserForm_Initialize()
     CancelDisable
@@ -67,7 +68,12 @@ Private Sub UserForm_Initialize()
     End With
 End Sub
 
+Private Sub btnCancel_Click()
+    RaiseEvent QueryCancel
+End Sub
+
 '===============================================================================
+' # Logic
 
 Public Sub UpdateTo( _
                ByVal Current As Long, ByVal Max As Long, _
@@ -107,6 +113,7 @@ Public Property Let Cancelable(Value As Boolean)
 End Property
 
 '===============================================================================
+' # Helpers
 
 Private Sub CancelDisable()
     Me.Height = 55
@@ -125,10 +132,6 @@ Private Sub CancelEnable()
         .SetFocus
     End With
     CloseButtonSettings Me, True
-End Sub
-
-Private Sub btnCancel_Click()
-    RaiseEvent QueryCancel
 End Sub
 
 'https://exceloffthegrid.com/hide-or-disable-a-vba-userform-X-close-button/

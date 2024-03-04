@@ -33,14 +33,14 @@ Private This As typeThis
 
 '===============================================================================
 
-Public Function GetDocumentOrPage( _
+Public Function RequestDocumentOrPage( _
                     Optional ByVal ErrNoDocument As String = _
                         DefaultErrNoDocument, _
                     Optional ByVal PageCanBeEmpty As Boolean = False, _
                     Optional ByVal ErrPageEmpty As String = _
                         DefaultErrPageEmpty _
                 ) As InputData
-    Set GetDocumentOrPage = New InputData
+    Set RequestDocumentOrPage = New InputData
     If ActiveDocument Is Nothing Then
         VBA.MsgBox ErrNoDocument, vbExclamation
         Exit Function
@@ -49,7 +49,7 @@ Public Function GetDocumentOrPage( _
         VBA.MsgBox ErrPageEmpty, vbExclamation
         Exit Function
     End If
-    With GetDocumentOrPage
+    With RequestDocumentOrPage
         .InjectSuccess True
         .InjectDocument ActiveDocument
         .InjectPage .Document.ActivePage
@@ -59,14 +59,14 @@ Public Function GetDocumentOrPage( _
     End With
 End Function
 
-Public Function GetLayer( _
+Public Function RequestLayer( _
                     Optional ByVal ErrNoDocument As String = _
                         DefaultErrNoDocument, _
                     Optional ByVal LayerMustBeEnabled As Boolean = False, _
                     Optional ByVal ErrLayerDisabled As String = _
                         DefaultErrLayerDisabled _
                 ) As InputData
-    Set GetLayer = New InputData
+    Set RequestLayer = New InputData
     If ActiveDocument Is Nothing Then
         VBA.MsgBox ErrNoDocument, vbExclamation
         Exit Function
@@ -75,7 +75,7 @@ Public Function GetLayer( _
         VBA.MsgBox ErrLayerDisabled, vbExclamation
         Exit Function
     End If
-    With GetLayer
+    With RequestLayer
         .InjectSuccess True
         .InjectLayer ActiveLayer
         .InjectPage .Layer.Page
@@ -85,7 +85,7 @@ Public Function GetLayer( _
     End With
 End Function
 
-Public Function GetShapes( _
+Public Function RequestShapes( _
                     Optional ByVal ErrNoDocument As String = _
                         DefaultErrNoDocument, _
                     Optional ByVal LayerMustBeEnabled As Boolean = False, _
@@ -94,7 +94,7 @@ Public Function GetShapes( _
                     Optional ByVal ErrNoSelection As String = _
                         DefaultErrNoSelection _
                 ) As InputData
-    Set GetShapes = New InputData
+    Set RequestShapes = New InputData
     If ActiveDocument Is Nothing Then
         VBA.MsgBox ErrNoDocument, vbExclamation
         Exit Function
@@ -103,7 +103,7 @@ Public Function GetShapes( _
         VBA.MsgBox ErrNoSelection, vbInformation
         Exit Function
     End If
-    With GetShapes
+    With RequestShapes
         .InjectDocument ActiveDocument
         .InjectShapes ActiveSelectionRange
         .InjectShape .Shapes.FirstShape

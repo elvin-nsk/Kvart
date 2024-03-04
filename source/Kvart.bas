@@ -2,7 +2,7 @@ Attribute VB_Name = "Kvart"
 '===============================================================================
 '   Макрос          : Kvart
 '   Описание        : Генератор месяцев календаря постранично на основе шаблона
-'   Версия          : 2022.12.26
+'   Версия          : 2024.03.04
 '   Сайты           : https://vk.com/elvin_macro/Kvart
 '                     https://github.com/elvin-nsk/Kvart
 '   Автор           : elvin-nsk (me@elvin.nsk.ru)
@@ -10,9 +10,13 @@ Attribute VB_Name = "Kvart"
 
 Option Explicit
 
-Public Const RELEASE As Boolean = True
+'===============================================================================
+' # Manifest
+
+Public Const APP_NAME As String = "Kvart"
 
 '===============================================================================
+' # Globals
 
 Public Type typeParams
     MonthRU(1 To 12) As String
@@ -67,13 +71,16 @@ Const SMALLDAY_FRAME_NUM As String = "1"
 Const SMALLSUN_FRAME_NUM As String = "6"
 
 '===============================================================================
+' # Entry points
 
 Sub Start()
 
-    If RELEASE Then On Error GoTo Catch
+    #If DebugMode = 0 Then
+    On Error GoTo Catch
+    #End If
     
     Dim Doc As Document
-    With InputData.GetDocumentOrPage
+    With InputData.RequestDocumentOrPage
         If .IsError Then Exit Sub
         Set Doc = .Document
     End With
@@ -90,7 +97,7 @@ Sub Start()
         .Name = "Календарь на основе шаблона " & Doc.Name
         .Activate
     End With
-    BoostStart "Kvart", RELEASE
+    BoostStart APP_NAME
     MakeKvartFromActiveDoc Params
         
 Finally:
@@ -98,22 +105,27 @@ Finally:
     Exit Sub
 
 Catch:
-    VBA.MsgBox VBA.Err.Description, vbCritical, "Error"
+    VBA.MsgBox VBA.Err.Source & ": " & VBA.Err.Description, vbCritical, "Error"
     Resume Finally
 
 End Sub
 
 '===============================================================================
+' # Helpers
 
 Private Sub MakeKvartFromActiveDoc(ByRef Params As typeParams)
     
-    Const CalPagesCount As Long = 14
+    #If DebugMode = 1 Then
+    Const CAL_PAGES_COUNT As Long = 3
+    #Else
+    Const CAL_PAGES_COUNT As Long = 14
+    #End If
     
-    Dim Positions As typePositions
-    Positions = CalculatePositionsFromActivePage(Params)
+    Dim Positions As typePositions: Positions = _
+        CalculatePositionsFromActivePage(Params)
     
     With Params
-        .YearKvart = VBA.CLng(FindByName(YEAR_NAME).Text.Story.Text)
+        .YearKvart = CLng(FindByName(YEAR_NAME).Text.Story.Text)
         
         'вычисляем количество дней в нужных месяцах
         Dim i As Long
@@ -128,13 +140,14 @@ Private Sub MakeKvartFromActiveDoc(ByRef Params As typeParams)
     ActiveDocument.MasterPage.SetSize _
         ActivePage.SizeWidth, _
         ActivePage.SizeHeight
-    DuplicateActivePage CalPagesCount - 1
+    DuplicateActivePage CAL_PAGES_COUNT - 1
     
-    Dim PBar As IProgressBar
-    Set PBar = ProgressBar.CreateNumeric(CalPagesCount)
+    Dim PBar As ProgressBar: Set PBar = _
+        ProgressBar.New_(ProgressBarNumeric, CAL_PAGES_COUNT)
     PBar.Caption = "Заполнение сеток"
-    For i = 1 To VBA.IIf(RELEASE, CalPagesCount, 2)
-        ProcessPage ActiveDocument.Pages(i), Params, Positions
+    For i = 1 To CAL_PAGES_COUNT
+        ActiveDocument.Pages(i).Activate
+        ProcessActivePage Params, Positions
         PBar.Update
     Next
     
@@ -142,28 +155,24 @@ Private Sub MakeKvartFromActiveDoc(ByRef Params As typeParams)
 
 End Sub
 
-Private Sub ProcessPage( _
-                ByVal Page As Page, _
+Private Sub ProcessActivePage( _
                 ByRef Params As typeParams, _
                 ByRef Positions As typePositions _
             )
-    
-    Page.Activate
     
     Dim Shape As Shape, Shapes As New ShapeRange
     Dim WeekSrc As Shape, DaySrc As Shape
     Dim SunSrc As Shape, DaydubSrc As Shape
     Dim SmalldaySrc As Shape, SmallsunSrc As Shape, FrameSrc As Shape
-    Dim MonthRUtxt As String, MonthENtxt As String
     Dim Year As Long, Month As Long, Day As Long
     Dim MonthInArr As Long, CurWeek As Long
     Dim StartDay As Long, DubsCount As Long
     Dim i
 
-    Select Case Page.Index
+    Select Case ActivePage.Index
         Case 2 To 13
             Year = Params.YearKvart
-            Month = Page.Index - 1
+            Month = ActivePage.Index - 1
             MonthInArr = Month
         Case 1
             Year = Params.YearKvart - 1
@@ -174,8 +183,8 @@ Private Sub ProcessPage( _
             Month = 1
             MonthInArr = 13
     End Select
-    MonthRUtxt = VBA.UCase(Params.MonthRU(Month))
-    MonthENtxt = VBA.UCase(Params.MonthEN(Month))
+    Dim MonthRUtxt As String: MonthRUtxt = VBA.UCase(Params.MonthRU(Month))
+    Dim MonthENtxt As String: MonthENtxt = VBA.UCase(Params.MonthEN(Month))
     
     SetTextByName MONTH_RU_NAME, MonthRUtxt
     SetTextByName MONTH_EN_NAME, MonthENtxt
@@ -196,7 +205,8 @@ Private Sub ProcessPage( _
         Set SmallsunSrc = FindByName(SMALLSUN_NUM_NAME)
     End If
     If Params.IsDubs Then
-        DubsCount = Params.MaxFrame - Params.DaysIn(MonthInArr) - (StartDay - 1)
+        DubsCount = _
+            Params.MaxFrame - Params.DaysIn(MonthInArr) - (StartDay - 1)
         If DubsCount < 0 Then DubsCount = Abs(DubsCount) Else DubsCount = 0
     Else
         DubsCount = 0
@@ -206,12 +216,23 @@ Private Sub ProcessPage( _
     If Params.IsWeeks Then
         Set WeekSrc = FindByName(WEEK_NUM_NAME)
         For i = 1 To Params.MaxWeek
-            CurWeek = VBA.DatePart("ww", DateAdd("ww", -1 + i, "1/" & CStr(Month) & "/" & CStr(Year)), vbMonday, vbFirstFourDays)
-            Set Shape = DupShape(WeekSrc, FindByName(WEEK_FRAME_PREFIX + CStr(i)), Positions.WeekNumShiftX, Positions.WeekNumShiftY)
+            CurWeek = _
+                VBA.DatePart( _
+                    "ww", _
+                    DateAdd( _
+                        "ww", -1 + i, "1/" & CStr(Month) & "/" & CStr(Year) _
+                    ), _
+                    vbMonday, vbFirstFourDays _
+                )
+            Set Shape = _
+                DupShape( _
+                    WeekSrc, FindByName(WEEK_FRAME_PREFIX + CStr(i)), _
+                    Positions.WeekNumShiftX, Positions.WeekNumShiftY _
+                )
             Shape.Text.Story.Text = CStr(CurWeek)
-            Shape.Name = ""
+            Shape.Name = vbNullString
         Next
-        SafeDeleteByName WEEK_NUM_NAME
+        TryDeleteByName WEEK_NUM_NAME
     End If
     
     'расставляем дни
@@ -220,53 +241,93 @@ Private Sub ProcessPage( _
         Set FrameSrc = FindByName(DAY_FRAME_PREFIX + CStr(i))
         Select Case True
             Case Params.IsSmalls And i < StartDay And IsSun(Month, Day, i)
-                Set Shape = DupShape(SmallsunSrc, FrameSrc, Positions.SmallsunNumShiftX, Positions.SmallsunNumShiftY)
-                Shape.Text.Story.Text = CStr(Params.DaysIn(MonthInArr - 1) - (StartDay - 1) + i)
-                Shape.Name = ""
+                Set Shape = _
+                    DupShape( _
+                        SmallsunSrc, FrameSrc, _
+                        Positions.SmallsunNumShiftX, Positions.SmallsunNumShiftY _
+                    )
+                Shape.Text.Story.Text = _
+                    CStr(Params.DaysIn(MonthInArr - 1) - (StartDay - 1) + i)
+                Shape.Name = vbNullString
             Case Params.IsSmalls And i < StartDay
-                Set Shape = DupShape(SmalldaySrc, FrameSrc, Positions.SmalldayNumShiftX, Positions.SmalldayNumShiftY)
-                Shape.Text.Story.Text = CStr(Params.DaysIn(MonthInArr - 1) - (StartDay - 1) + i)
-                Shape.Name = ""
-            Case Params.IsSmalls And i > Params.DaysIn(MonthInArr) + (StartDay - 1) And IsSun(Month, Day, i)
-                Set Shape = DupShape(SmallsunSrc, FrameSrc, Positions.SmallsunNumShiftX, Positions.SmallsunNumShiftY)
-                Shape.Text.Story.Text = CStr(i - Params.DaysIn(MonthInArr) - (StartDay - 1))
-                Shape.Name = ""
-            Case Params.IsSmalls And i > Params.DaysIn(MonthInArr) + (StartDay - 1)
-                Set Shape = DupShape(SmalldaySrc, FrameSrc, Positions.SmalldayNumShiftX, Positions.SmalldayNumShiftY)
-                Shape.Text.Story.Text = CStr(i - Params.DaysIn(MonthInArr) - (StartDay - 1))
-                Shape.Name = ""
+                Set Shape = _
+                    DupShape( _
+                        SmalldaySrc, FrameSrc, _
+                        Positions.SmalldayNumShiftX, Positions.SmalldayNumShiftY _
+                    )
+                Shape.Text.Story.Text = _
+                    CStr(Params.DaysIn(MonthInArr - 1) - (StartDay - 1) + i)
+                Shape.Name = vbNullString
+            Case Params.IsSmalls _
+             And i > Params.DaysIn(MonthInArr) + (StartDay - 1) _
+             And IsSun(Month, Day, i)
+                Set Shape = _
+                    DupShape( _
+                        SmallsunSrc, FrameSrc, _
+                        Positions.SmallsunNumShiftX, Positions.SmallsunNumShiftY _
+                    )
+                Shape.Text.Story.Text = _
+                    CStr(i - Params.DaysIn(MonthInArr) - (StartDay - 1))
+                Shape.Name = vbNullString
+            Case Params.IsSmalls _
+             And i > Params.DaysIn(MonthInArr) + (StartDay - 1)
+                Set Shape = _
+                    DupShape( _
+                        SmalldaySrc, FrameSrc, _
+                        Positions.SmalldayNumShiftX, Positions.SmalldayNumShiftY _
+                    )
+                Shape.Text.Story.Text = _
+                    CStr(i - Params.DaysIn(MonthInArr) - (StartDay - 1))
+                Shape.Name = vbNullString
             Case (i = 29 And DubsCount > 0) Or (i = 30 And DubsCount = 2)
-                Set Shape = DupShape(DaydubSrc, FrameSrc, Positions.DaydubShiftX, Positions.DaydubShiftY)
+                Set Shape = _
+                    DupShape( _
+                        DaydubSrc, FrameSrc, _
+                        Positions.DaydubShiftX, Positions.DaydubShiftY _
+                    )
                 Shapes.RemoveAll
                 Shapes.Add Shape
                 Shapes.UngroupAll
-                Shapes(NUM_TOP_NAME).Text.Story.Text = CStr(i - (StartDay - 1))
-                Shapes(NUM_BOT_NAME).Text.Story.Text = CStr(i - (StartDay - 1) + 7)
-                Shapes(NUM_TOP_NAME).Name = ""
-                Shapes(NUM_BOT_NAME).Name = ""
-            Case IsSun(Month, Day, i) And i >= StartDay And i <= Params.DaysIn(MonthInArr) + (StartDay - 1)
-                Set Shape = DupShape(SunSrc, FrameSrc, Positions.SunNumShiftX, Positions.SunNumShiftY)
+                Shapes(NUM_TOP_NAME).Text.Story.Text = _
+                    CStr(i - (StartDay - 1))
+                Shapes(NUM_BOT_NAME).Text.Story.Text = _
+                    CStr(i - (StartDay - 1) + 7)
+                Shapes(NUM_TOP_NAME).Name = vbNullString
+                Shapes(NUM_BOT_NAME).Name = vbNullString
+            Case IsSun(Month, Day, i) _
+             And i >= StartDay _
+             And i <= Params.DaysIn(MonthInArr) + (StartDay - 1)
+                Set Shape = _
+                    DupShape( _
+                        SunSrc, FrameSrc, _
+                        Positions.SunNumShiftX, Positions.SunNumShiftY _
+                    )
                 Shape.Text.Story.Text = CStr(Day)
-                Shape.Name = ""
-            Case i >= StartDay And i <= Params.DaysIn(MonthInArr) + (StartDay - 1)
-                Set Shape = DupShape(DaySrc, FrameSrc, Positions.DayNumShiftX, Positions.DayNumShiftY)
+                Shape.Name = vbNullString
+            Case i >= StartDay _
+             And i <= Params.DaysIn(MonthInArr) + (StartDay - 1)
+                Set Shape = _
+                    DupShape( _
+                        DaySrc, FrameSrc, _
+                        Positions.DayNumShiftX, Positions.DayNumShiftY _
+                    )
                 Shape.Text.Story.Text = CStr(Day)
-                Shape.Name = ""
+                Shape.Name = vbNullString
         End Select
     Next
     
     'подчищаем лишние исходники
-    SafeDeleteByName DAY_NUM_NAME
-    SafeDeleteByName SUN_NUM_NAME
-    SafeDeleteByName DAY_DUB_NAME
-    SafeDeleteByName SMALLDAY_NUM_NAME
-    SafeDeleteByName SMALLSUN_NUM_NAME
+    TryDeleteByName DAY_NUM_NAME
+    TryDeleteByName SUN_NUM_NAME
+    TryDeleteByName DAY_DUB_NAME
+    TryDeleteByName SMALLDAY_NUM_NAME
+    TryDeleteByName SMALLSUN_NUM_NAME
     
     'подчищаем лишние рамки
     If Params.IsDubs Then
-        SafeDeleteByName WEEK_FRAME_PREFIX & "6"
+        TryDeleteByName WEEK_FRAME_PREFIX & "6"
         For i = 36 To 42
-            SafeDeleteByName DAY_FRAME_PREFIX & VBA.CStr(i)
+            TryDeleteByName DAY_FRAME_PREFIX & VBA.CStr(i)
         Next
     End If
     
@@ -338,7 +399,9 @@ Private Function ValidateActivePage(ByRef Params As typeParams) As Boolean
         Next
         If .IsWeeks Then
             For i = 1 To .MaxWeek
-                CheckNotFound WEEK_FRAME_PREFIX + VBA.CStr(i), "рамки номера недели", Params
+                CheckNotFound _
+                    WEEK_FRAME_PREFIX + VBA.CStr(i), _
+                    "рамки номера недели", Params
             Next
         End If
         If .ErrLog.Count > 0 Then Exit Function
@@ -451,7 +514,7 @@ Private Sub SetTextByName(ByVal Name As String, ByVal Text As String)
     
 End Sub
 
-Private Sub SafeDeleteByName(ByVal Name As String)
+Private Sub TryDeleteByName(ByVal Name As String)
     Dim Shape As Shape, Shapes As ShapeRange
     
     Set Shapes = ActivePage.FindShapes(Name)
@@ -500,8 +563,7 @@ Private Sub CheckNotText( _
                 objText As String, _
                 Params As typeParams _
             )
-    Dim Shape As Shape
-    Set Shape = FindByName(Name)
+    Dim Shape As Shape: Set Shape = FindByName(Name)
     If Not Shape.Type = cdrTextShape Then _
         Params.ErrLog.Add _
             "Объект " & objText & " (" & Name & ")" & " - не текстовый", _
@@ -513,8 +575,7 @@ Private Sub CheckNotNum( _
                 objText As String, _
                 Params As typeParams _
             )
-    Dim Shape As Shape
-    Set Shape = FindByName(Name)
+    Dim Shape As Shape: Set Shape = FindByName(Name)
     Dim Str As String
     Str = Shape.Text.Story.Text
     If Not VBA.IsNumeric(Str) Then _

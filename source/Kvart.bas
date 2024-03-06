@@ -28,7 +28,10 @@ Public Type typeParams
     IsDubs As Boolean
     IsWeeks As Boolean
     IsSmalls As Boolean
-    ErrLog As Logger
+    IsPrevMonth As Boolean
+    IsNextMonth As Boolean
+    IsSmallMonths As Boolean
+    ErrorLog As Logger
 End Type
 
 Public Type typePositions
@@ -44,6 +47,8 @@ Public Type typePositions
     SmalldayNumShiftY As Double
     SmallsunNumShiftX As Double
     SmallsunNumShiftY As Double
+    PrevMonthRect As Rect
+    NextMonthRect As Rect
 End Type
 
 'имена объектов в шаблоне
@@ -61,6 +66,8 @@ Const SMALLDAY_NUM_NAME As String = "SMALLDAY_NUM"
 Const SMALLSUN_NUM_NAME As String = "SMALLSUN_NUM"
 Const DAY_FRAME_PREFIX As String = "DAY_FRAME_"
 Const WEEK_FRAME_PREFIX As String = "WEEK_FRAME_"
+Const PREV_MONTH_FRAME As String = "PREV_MONTH_FRAME"
+Const NEXT_MONTH_FRAME As String = "NEXT_MONTH_FRAME"
 
 'к каким рамкам привязаны ключевые элементы
 Const WEEK_FRAME_NUM As String = "1"
@@ -85,11 +92,10 @@ Sub Start()
         Set Doc = .Document
     End With
     
-    Dim Params As typeParams
-    Params = ExtractParamsFromActivePage
+    Dim Params As typeParams: Params = ExtractParamsFromActivePage
     
     If Not ValidateActivePage(Params) Then
-        Params.ErrLog.Check
+        Params.ErrorLog.Check
         Exit Sub
     End If
             
@@ -111,7 +117,7 @@ Catch:
 End Sub
 
 '===============================================================================
-' # Helpers
+' # Main routine
 
 Private Sub MakeKvartFromActiveDoc(ByRef Params As typeParams)
     
@@ -142,18 +148,32 @@ Private Sub MakeKvartFromActiveDoc(ByRef Params As typeParams)
         ActivePage.SizeHeight
     DuplicateActivePage CAL_PAGES_COUNT - 1
     
+    Dim SmallMonthsSources As Collection
+    If Params.IsSmallMonths Then Set SmallMonthsSources = New Collection
     Dim PBar As ProgressBar: Set PBar = _
         ProgressBar.New_(ProgressBarNumeric, CAL_PAGES_COUNT)
     PBar.Caption = "Заполнение сеток"
     For i = 1 To CAL_PAGES_COUNT
         ActiveDocument.Pages(i).Activate
         ProcessActivePage Params, Positions
+        If Params.IsSmallMonths Then SmallMonthsSources.Add GetMonthSource
         PBar.Update
-    Next
+    Next i
+    If Params.IsSmallMonths Then
+        PBar.Caption = "Расстановка дополнительных месяцев"
+        For i = 1 To CAL_PAGES_COUNT
+            ProcessSmallMonthFrames _
+                ActiveDocument.Pages(i), SmallMonthsSources, Params, Positions
+            PBar.UpdateTo i
+        Next i
+    End If
     
     ActiveDocument.Pages(1).Activate
 
 End Sub
+
+'===============================================================================
+' # Logic
 
 Private Sub ProcessActivePage( _
                 ByRef Params As typeParams, _
@@ -333,15 +353,63 @@ Private Sub ProcessActivePage( _
     
 End Sub
 
+'===============================================================================
+' # Helpers
+
+Private Property Get GetMonthSource() As ShapeRange
+    Dim Shapes As ShapeRange: Set Shapes = ActivePage.SelectableShapes.All
+    RemoveSmallMonthFrames Shapes
+    Set GetMonthSource = Shapes
+End Property
+
+Private Sub ProcessSmallMonthFrames( _
+                ByVal TargetPage As Page, _
+                ByVal SmallMonthsSources As Collection, _
+                ByRef Params As typeParams, _
+                ByRef Positions As typePositions _
+            )
+    If Params.IsPrevMonth Then
+        TryCopyShapesToFrame _
+            TargetPage.Previous, TargetPage, _
+            SmallMonthsSources, Positions.PrevMonthRect
+    End If
+    If Params.IsNextMonth Then
+        TryCopyShapesToFrame _
+            TargetPage.Next, TargetPage, _
+            SmallMonthsSources, Positions.NextMonthRect
+    End If
+End Sub
+
+Private Sub TryCopyShapesToFrame( _
+                ByVal FromPage As Page, _
+                ByVal TargetPage As Page, _
+                ByVal SmallMonthsSources As Collection, _
+                ByVal FrameRect As Rect _
+            )
+    If FromPage Is Nothing Then Exit Sub
+    Dim Shapes As ShapeRange: Set Shapes = _
+        SmallMonthsSources(FromPage.Index).Duplicate
+    Shapes.MoveToLayer TargetPage.ActiveLayer
+    FitInside Group(Shapes), FrameRect
+End Sub
+
+Private Sub RemoveSmallMonthFrames(ByVal FromRange As ShapeRange)
+    TryRemoveFromRange FromRange, FromRange.Shapes.FindShape(PREV_MONTH_FRAME)
+    TryRemoveFromRange FromRange, FromRange.Shapes.FindShape(NEXT_MONTH_FRAME)
+End Sub
+
+Private Sub TryRemoveFromRange(ByVal Range As ShapeRange, ByVal Shape As Shape)
+    If Shape Is Nothing Then Exit Sub
+    Range.RemoveRange PackShapes(Shape)
+End Sub
+
 'извлечение основных параметров
 Private Function ExtractParamsFromActivePage() As typeParams
     With ExtractParamsFromActivePage
-        If FindByName(WEEK_NUM_NAME) Is Nothing Then _
-            .IsWeeks = False Else .IsWeeks = True
-        If FindByName(DAY_DUB_NAME) Is Nothing Then _
-            .IsDubs = False Else .IsDubs = True
-        If FindByName(SMALLDAY_NUM_NAME) Is Nothing _
-        Or FindByName(SMALLSUN_NUM_NAME) Is Nothing Then _
+        .IsWeeks = Not NotFound(WEEK_NUM_NAME)
+        .IsDubs = Not NotFound(DAY_DUB_NAME)
+        If NotFound(SMALLDAY_NUM_NAME) _
+        Or NotFound(SMALLSUN_NUM_NAME) Then _
             .IsSmalls = False Else .IsSmalls = True
         If .IsDubs Then
             .MaxWeek = 5
@@ -350,6 +418,9 @@ Private Function ExtractParamsFromActivePage() As typeParams
             .MaxWeek = 6
             .MaxFrame = 42
         End If
+        .IsNextMonth = Not NotFound(NEXT_MONTH_FRAME)
+        .IsPrevMonth = Not NotFound(PREV_MONTH_FRAME)
+        .IsSmallMonths = .IsNextMonth Or .IsPrevMonth
         
         .MonthRU(1) = "январь"
         .MonthRU(2) = "февраль"
@@ -382,44 +453,44 @@ End Function
 'проверка на ошибки
 Private Function ValidateActivePage(ByRef Params As typeParams) As Boolean
     With Params
-        Set .ErrLog = New Logger
+        Set .ErrorLog = New Logger
     
         'ошибки 1-го уровня (объект отсутствует)
-        CheckNotFound YEAR_NAME, "текущего года", Params
-        CheckNotFound MONTH_RU_NAME, "названия месяца по-русски", Params
-        CheckNotFound DAY_NUM_NAME, "буднего дня", Params
-        CheckNotFound SUN_NUM_NAME, "выходного дня", Params
+        LogIfNotFound YEAR_NAME, "текущего года", Params
+        LogIfNotFound MONTH_RU_NAME, "названия месяца по-русски", Params
+        LogIfNotFound DAY_NUM_NAME, "буднего дня", Params
+        LogIfNotFound SUN_NUM_NAME, "выходного дня", Params
         If .IsDubs Then
-            CheckNotFound NUM_TOP_NAME, "верхней части дробного дня", Params
-            CheckNotFound NUM_BOT_NAME, "нижней части дробного дня", Params
+            LogIfNotFound NUM_TOP_NAME, "верхней части дробного дня", Params
+            LogIfNotFound NUM_BOT_NAME, "нижней части дробного дня", Params
         End If
         Dim i As Long
         For i = 1 To .MaxFrame
-            CheckNotFound DAY_FRAME_PREFIX + VBA.CStr(i), "рамки дня", Params
+            LogIfNotFound DAY_FRAME_PREFIX + VBA.CStr(i), "рамки дня", Params
         Next
         If .IsWeeks Then
             For i = 1 To .MaxWeek
-                CheckNotFound _
+                LogIfNotFound _
                     WEEK_FRAME_PREFIX + VBA.CStr(i), _
                     "рамки номера недели", Params
             Next
         End If
-        If .ErrLog.Count > 0 Then Exit Function
+        If .ErrorLog.Count > 0 Then Exit Function
         
         'ошибки 2-го уровня (объект не текстовый)
-        CheckNotText YEAR_NAME, "текущего года", Params
-        CheckNotText MONTH_RU_NAME, "названия месяца по-русски", Params
-        CheckNotText DAY_NUM_NAME, "буднего дня", Params
-        CheckNotText SUN_NUM_NAME, "выходного дня", Params
+        LogIfNotText YEAR_NAME, "текущего года", Params
+        LogIfNotText MONTH_RU_NAME, "названия месяца по-русски", Params
+        LogIfNotText DAY_NUM_NAME, "буднего дня", Params
+        LogIfNotText SUN_NUM_NAME, "выходного дня", Params
         If .IsDubs Then
-            CheckNotText NUM_TOP_NAME, "верхней части дробного дня", Params
-            CheckNotText NUM_BOT_NAME, "нижней части дробного дня", Params
+            LogIfNotText NUM_TOP_NAME, "верхней части дробного дня", Params
+            LogIfNotText NUM_BOT_NAME, "нижней части дробного дня", Params
         End If
-        If .ErrLog.Count > 0 Then Exit Function
+        If .ErrorLog.Count > 0 Then Exit Function
         
         'ошибки 3-го уровня (текст в объекте не число)
-        CheckNotNum YEAR_NAME, "текущего года", Params
-        If .ErrLog.Count > 0 Then Exit Function
+        LogIfNotNum YEAR_NAME, "текущего года", Params
+        If .ErrorLog.Count > 0 Then Exit Function
     End With
     
     ValidateActivePage = True
@@ -472,6 +543,12 @@ Private Function CalculatePositionsFromActivePage( _
                 FindByName(SMALLSUN_NUM_NAME).BottomY _
               - FindByName(DAY_FRAME_PREFIX & SMALLSUN_FRAME_NUM).BottomY
         End If
+        If Params.IsPrevMonth Then _
+            Set .PrevMonthRect = _
+                FindByName(PREV_MONTH_FRAME).BoundingBox.GetCopy
+        If Params.IsNextMonth Then _
+            Set .NextMonthRect = _
+                FindByName(NEXT_MONTH_FRAME).BoundingBox.GetCopy
     End With
 End Function
 
@@ -549,40 +626,66 @@ Private Function IsSun(Month, Day, Frame) As Boolean
     End If
 End Function
 
-Private Sub CheckNotFound( _
+Private Sub LogIfNotFound( _
                 Name As String, _
                 objText As String, _
                 Params As typeParams _
             )
-    If FindByName(Name) Is Nothing Then _
-        Params.ErrLog.Add "Не найден объект " & objText & " (" & Name & ")"
+    If NotFound(Name) Then _
+        Params.ErrorLog.Add "Не найден объект " & objText & " (" & Name & ")"
 End Sub
 
-Private Sub CheckNotText( _
+Private Sub LogIfNotNum( _
                 Name As String, _
                 objText As String, _
                 Params As typeParams _
             )
-    Dim Shape As Shape: Set Shape = FindByName(Name)
-    If Not Shape.Type = cdrTextShape Then _
-        Params.ErrLog.Add _
+    Dim Shape As Shape
+    If NotNum(Name, Shape) Then _
+        Params.ErrorLog.Add _
+            "Текст в объекте " & objText & " (" & YEAR_NAME & ")" _
+          & " не является числом", Shape
+End Sub
+
+Private Sub LogIfNotText( _
+                Name As String, _
+                objText As String, _
+                Params As typeParams _
+            )
+    Dim Shape As Shape
+    If NotText(Name, Shape) Then _
+        Params.ErrorLog.Add _
             "Объект " & objText & " (" & Name & ")" & " - не текстовый", _
             Shape
 End Sub
 
-Private Sub CheckNotNum( _
-                Name As String, _
-                objText As String, _
-                Params As typeParams _
-            )
-    Dim Shape As Shape: Set Shape = FindByName(Name)
-    Dim Str As String
-    Str = Shape.Text.Story.Text
-    If Not VBA.IsNumeric(Str) Then _
-        Params.ErrLog.Add _
-            "Текст в объекте " & objText & " (" & YEAR_NAME & ")" _
-          & " не является числом", Shape
-End Sub
+Private Property Get NotFound(ByVal Name As String) As Boolean
+    NotFound = FindByName(Name) Is Nothing
+End Property
+
+Private Property Get NotNum( _
+                         ByVal Name As String, _
+                         Optional ByRef ReturnShape As Shape _
+                     ) As Boolean
+    Set ReturnShape = FindByName(Name)
+    If ReturnShape Is Nothing Then
+        NotNum = True
+        Exit Property
+    End If
+    NotNum = Not VBA.IsNumeric(ReturnShape.Text.Story.Text)
+End Property
+
+Private Property Get NotText( _
+                         ByVal Name As String, _
+                         Optional ByRef ReturnShape As Shape _
+                     ) As Boolean
+    Set ReturnShape = FindByName(Name)
+    If ReturnShape Is Nothing Then
+        NotText = True
+        Exit Property
+    End If
+    NotText = Not (ReturnShape.Type = cdrTextShape)
+End Property
 
 '===============================================================================
 ' # тесты

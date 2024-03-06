@@ -1,7 +1,7 @@
 Attribute VB_Name = "LibCore"
 '===============================================================================
 '   Модуль          : LibCore
-'   Версия          : 2024.02.26
+'   Версия          : 2024.03.06
 '   Автор           : elvin-nsk (me@elvin.nsk.ru)
 '   Использован код : dizzy (из макроса CtC), Alex Vakulenko
 '                     и др.
@@ -1229,11 +1229,12 @@ Public Function FlattenPagesToLayer(ByVal LayerName As String) As Layer
 
 End Function
 
-Public Function GroupAndName( _
-                    ByVal Shapes As ShapeRange, ByVal Name As String _
+Public Function Group( _
+                    ByVal Shapes As ShapeRange, Optional ByVal Name As String _
                 ) As Shape
-    Set GroupAndName = Shapes.Group
-    GroupAndName.Name = Name
+    Shapes.FirstShape.Page.Activate
+    Set Group = Shapes.Group
+    If Not Name = vbNullString Then Group.Name = Name
 End Function
 
 'правильный интерсект
